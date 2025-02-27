@@ -1,0 +1,87 @@
+<pre>
+  NEP: TBD
+  Title: Neo state snapshot format
+  Author: Ekaterina Pavlova <ekt@nspcc.ru>
+  Type: Informational
+  Status: Draft
+  Created: 2025-02-26
+</pre>
+
+==Abstract==
+
+This proposal specifies a format for capturing Neo blockchain state snapshots as key-value pairs at
+specific block heights, enabling nodes to efficiently rebuild state without processing the entire chain.
+
+==Motivation==
+
+For most real-world scenarios, only the '''current''' or '''near-current''' chain state is required rather
+than the entire historical ledger. By periodically generating “snapshots” of MPT key-value data at specific heights,
+nodes can download and verify a snapshot’s root without replaying all blocks from genesis. This speeds
+up synchronization, lowers local storage needs, and ensures correctness via root-hash validation.
+Meanwhile, archival nodes can continue to store the entire chain, ensuring full auditability and historical
+access for the network.
+
+==Specification==
+
+===State Snapshot Structure===
+
+The state snapshot captures the blockchain state as key-value pairs at a specific height, serialized with
+little-endian encodings and standard `varuint` for length fields:
+
+<pre>
+state_binary
+{
+  1-byte version;              // Snapshot version
+  4-byte magic;                // Network magic number
+  4-byte height;               // Block height (uint32)
+  32-byte stateroot;           // State root hash (uint256, LE)
+  var-byte pairs[];            // Array of key-value pairs
+}
+</pre>
+
+====version====
+The <code>version</code> item is a 1-byte value indicating the snapshot format version (e.g., `0`).
+
+====magic====
+The <code>magic</code> item is a 4-byte `uint32` representing the network magic number.
+
+====height====
+The <code>height</code> item is a 4-byte `uint32` specifying the block height of the snapshot.
+
+====stateroot====
+The <code>stateroot</code> item is a 32-byte `util.Uint256` in little-endian format, representing
+ the state root at <code>height</code>.
+
+====pairs====
+The <code>pairs</code> item is an array of key-value pairs from the state, where each pair consists of:
+- <code>key_length</code> (`varuint`): Length of the key in bytes.
+- <code>key</code> (<code>key_length</code> bytes): Raw key data.
+- <code>value_length</code> (`varuint`): Length of the value in bytes.
+- <code>value</code> (<code>value_length</code> bytes): Raw value data.
+
+The array is serialized by traversing the state at the specified height, writing each key-value pair in
+sequence.
+
+Optional metadata (e.g., timestamps, attributes) '''MAY''' be written separately or
+stored alongside the file in a higher-level container system (e.g., object attributes in NeoFS).
+
+== Rationale ==
+
+Currently, the Neo node can synchronize only via P2P, going through the whole chain from genesis to the
+current block and storing all of the state locally. While P2P MPT state exchange can help, it still requires
+transferring large amounts of incremental data.
+Most nodes only need the most recent (or near-recent) state rather than the entire historical ledger.
+By standardizing a state snapshot format based on key-value pairs, nodes can skip fetching all previous
+blocks and simply load a validated state at a given height and then synchronize some small amount of
+blocks to catch up with other nodes. This not only reduces local storage consumption but also cuts down
+on bandwidth usage and synchronization times.
+
+In parallel, full-chain archival ensures that the complete history is still available for audits or
+specialized use cases. This strikes a balance between efficiency (for nodes that only want the current
+ state) and full data retention (for those who need an archival record).
+
+== References ==
+* [https://github.com/neo-project/neo/issues/3463 Neo Issue#3463]
+
+== Implementation ==
+* Go: https://github.com/nspcc-dev/neo-go/blob/f60feefe45c2b734fb14d9234844d0264d01d016/cli/util/upload_state.go
