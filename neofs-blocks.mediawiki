@@ -1,0 +1,95 @@
+<pre>
+  NEP: TBD
+  Title: NeoFS block storage format
+  Author: Ekaterina Pavlova <ekt@nspcc.ru>
+  Type: Standard
+  Status: Draft
+  Created: 2025-04-07
+</pre>
+
+==Abstract==
+
+This proposal outlines the specification for storing Neo blockchain blocks within
+the NeoFS container.
+
+==Motivation==
+
+Neo node synchronization via P2P requires all headers and blocks (~700 bytes each, over 1 GB per year with
+15-second blocks) to remain available, limiting scalability as chains grow. Storing blocks in NeoFS
+provides a distributed alternative, reducing local storage, enabling on-demand fetches and allowing to drop
+blocks and headers from storage for most nodes.
+
+==Specification==
+
+===Block Storage Schema===
+A single NeoFS container is used to store blocks per network. Each container includes a fixed metadata
+attribute named Magic whose value is the network’s magic number in decimal representation. Each block object
+is serialized following standard Neo block serialization rules and stored as a separate NeoFS object with a
+unique OID with the following fixed metadata attributes:
+
+{| class="wikitable"
+! Attribute name !! Attribute value
+|-
+| Block || String representation of the block index in base 10.
+|-
+| Hash || Hexadecimal string of the block’s hash.
+|-
+| PrevHash || Hexadecimal string of the previous block’s hash.
+|-
+| BlockTime || Millisecond-precision timestamp when the block was created.
+|-
+| Timestamp || Second-precision timestamp when the block was uploaded.
+|}
+
+These attributes are stored as NeoFS object metadata; the list of attributes MAY be extended.
+Multibyte data items are always stored in little-endian order, where the least significant
+bytes come first. The object consists of block serialized following the standard Neo block
+serialization format. The object MAY include additional data after the block.
+
+An example of a block object is as follows:
+<pre>
+ID: Fu7yQzspvLJwSGJNK64xeeyMdWXtU5B5b1es6KSxUag1
+CID: 3RCdP3ZubyKyo8qFeo7EJPryidTZaGCMdUjqFJaaEKBV
+Owner: NVvY1FF67XJ2GTVhy9FqiZGC4jEQtvjmHt
+CreatedAt: 28202
+Size: 697
+HomoHash: 45c98e627910d9b915d58368493789ce49ca194626f16ea5bf6b57bb2cce462921a1d3faf682d252a804b0555ca48905286222ee9209b3ff1ce4677a082ffd4d
+Checksum: fa6cedddfec3a61157c4a12e25f81e85c0f92aac70317d6df7fe193f983b4917
+Type: REGULAR
+Attributes:
+  Block=1
+  Primary=0
+  Hash=5f3fbb43d1e516fe07771e2e873ebc9e2810662401acf603a775aace486220bd
+  PrevHash=1f4d1defa46faa5e7b9b8d3f79a06bec777d7c26c4aa5f6f5899a291daa87c15
+  BlockTime=1627894840919
+  Timestamp=1734362616 (2024-12-16 18:23:36 +0300 MSK)
+ID signature:
+  public key: 02a4920745d86db224c179c936606dc0e4620edad13d568ef036da279352e45f2b
+  signature: 0443ff20d15952759b5101a7d223d70eb992260fd9ad5aecb404a97448b2ea54bd1ad783b12ccddba0097dd6608b55ccac9215c5715f9589ec6a555542ead6dc00
+[Block Binary Data]
+</pre>
+
+===Synchronization Algorithm===
+Blocks stored in NeoFS and those synchronized via P2P both use the standard Neo block
+serialization format, ensuring compatibility across different synchronization methods.
+The NeoFS container serves as verified storage for downloading blocks. Blocks should be
+searched one by one directly by block attribute.
+
+Downloaded blocks are inserted into the blockchain using the same logic as in the
+P2P synchronization protocol.
+
+==Rationale==
+Storing each block as a self-contained NeoFS object moves historical data off full nodes
+while preserving byte-exact compatibility with the P2P format. Standard metadata makes
+blocks easily discoverable without custom indices, and NeoFS gives durability and fast
+parallel fetches. The scheme is already validated in NeoGo experiments (e.g., nspcc-dev/neo-go#3496).
+
+== References ==
+* [https://github.com/neo-project/neo/issues/3463 Using NeoFS to store blocks and snapshots]
+* [https://github.com/neo-project/neo/issues/2373 P2P state exchange]
+* [https://github.com/neo-project/neo/issues/1526 StateRoot in block header]
+* [https://github.com/nspcc-dev/neo-go/issues/3496 Implement NeoFS block fetcher]
+
+== Implementation ==
+* Go: https://github.com/nspcc-dev/neo-go/blob/61992405983ddfb5547ae3afab75c22186dc966f/cli/util/uploader.go
+* Go: https://github.com/nspcc-dev/neo-go/blob/a10fa2f0fdcb453363ba84d04d27bb2353de4156/pkg/services/blockfetcher/blockfetcher.go
